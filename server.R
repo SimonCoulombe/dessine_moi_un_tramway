@@ -23,7 +23,7 @@ shinyServer(function(input, output) {
     temp_regions$region_distance <- as.numeric(st_distance(temp_regions, tram))
     
     
-    temp_regions$region_accessible <- temp_regions$region_distance == 0
+    temp_regions$region_accessible <- temp_regions$region_distance < 500
     
     # Pour les trajets dans les régions concernées, vérifier si ils peuvent utiliser le tram
     
@@ -94,7 +94,8 @@ shinyServer(function(input, output) {
          "pct_trajet_remplaces_region_couverte" = pct_trajet_remplaces_region_couverte,
          "pct_trajet_remplaces_region_quebec_levis" = pct_trajet_remplaces_region_quebec_levis, 
          "pct_quebec_levis_par_km" = pct_quebec_levis_par_km,
-         "tram_length" = signif(as.numeric(st_length(tram)),3)/1000)
+         "tram_length" = signif(as.numeric(st_length(tram)),3)/1000,
+         "tram" = tram)
     
   })
   
@@ -112,7 +113,7 @@ shinyServer(function(input, output) {
                      " : ", 
                      signif(pct_tramway,3),
                      " %")) %>%
-      addPolylines(data=tram, color = "red", label = "TCHOU TCHOU!!", opacity = 1, weight = 5) %>%
+      addPolylines(data=my_results()$"tram", color = "red", label = "TCHOU TCHOU!!", opacity = 1, weight = 5) %>%
       addLegend("bottomleft",
                 pal = mypalette_pct,
                 values =  ~ c(pct_tramway),
