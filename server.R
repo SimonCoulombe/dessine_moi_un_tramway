@@ -6,11 +6,8 @@ trajets2 <- read_rds("trajets2_small.rds")  %>%
 # Define server logic required to generate and plot a random distribution
 shinyServer(function(input, output) {
   
-
-  
-  
-  output$mymap <- renderLeaflet({
-    
+  # reactive expression
+  mytest3 <- eventReactive( input$recalc, {
     coords  <- gepaf::decodePolyline(enc_polyline = input$polygone )
     
     tram <- st_as_sf(coords, coords = c("lon", "lat"))  %>%# get points
@@ -89,12 +86,14 @@ shinyServer(function(input, output) {
       group_by(NOM) %>% 
       summarise(count_trip = n(),
                 pct_tramway = 100*mean(tramway_accessible))
-    
+  })
+  
 
-    mypalette_pct <- leaflet::colorNumeric(palette = "plasma", domain = c(test3$pct_tramway))
+  output$mymap <- renderLeaflet({
+    mypalette_pct <- leaflet::colorNumeric(palette = "plasma", domain = c(mytest3() %>% pull(pct_tramway)))
     
     prov_quebec %>% filter (ID <= 49) %>% 
-      left_join(test3) %>% 
+      left_join( mytest3()) %>% 
       leaflet() %>%
       addProviderTiles(providers$Esri.WorldTopoMap) %>%
       addPolygons( color= ~ mypalette_pct(pct_tramway),
@@ -109,4 +108,6 @@ shinyServer(function(input, output) {
                 values =  ~ c(pct_tramway),
                 title = "Pourcentage des voyages  <br>débutant ou se terminant dans ce secteur <br> remplaçables par le tramway <br> (moins de 1000 mètres de marche)")
   })
+  
+  output$mytable <- renderTable({ mytest3() %>% arrange(-pct_tramway)})
 })
