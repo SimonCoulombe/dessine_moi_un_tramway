@@ -7,7 +7,8 @@ trajets2 <- read_rds("trajets2_small.rds")  %>%
 shinyServer(function(input, output) {
   
   # reactive expression
-  mytest3 <- eventReactive( input$recalc, {
+  my_results <- eventReactive( input$recalc, {
+    start <- Sys.time()
     coords  <- gepaf::decodePolyline(enc_polyline = input$polygone )
     
     tram <- st_as_sf(coords, coords = c("lon", "lat"))  %>%# get points
@@ -18,10 +19,10 @@ shinyServer(function(input, output) {
     # TROUVER RÉGIONS TRAVERSÉES PAR LE TRAM pour calculer les distances seulement pour ces trajets là.
     # pour un trajet donné, trouver quels secteurs incluent le trajet ou sont a moins de 1000 metres 
     temp_regions <- prov_quebec
-    start <- Sys.time()
+    
     temp_regions$region_distance <- as.numeric(st_distance(temp_regions, tram))
-    stop <- Sys.time()
-    print(stop-start) # 12 secondes
+    
+    
     temp_regions$region_accessible <- temp_regions$region_distance == 0
     
     # Pour les trajets dans les régions concernées, vérifier si ils peuvent utiliser le tram
@@ -41,8 +42,7 @@ shinyServer(function(input, output) {
         distance_totale = distance_origine_tram + distance_destination_tram,
         tramway_accessible = ifelse(distance_totale < 1000, TRUE, FALSE)
       )
-    stop <- Sys.time() # 23 secondes
-    print(stop-start) 
+    
     
     # définir pour tous les trajets si ils sont acceessibles.  Si ne commence ou fini
     # pas dans un secteur couvert alors NON
@@ -86,14 +86,24 @@ shinyServer(function(input, output) {
       group_by(NOM) %>% 
       summarise(count_trip = n(),
                 pct_tramway = 100*mean(tramway_accessible))
+    
+    stop <- Sys.time() # 23 secondes
+    print(stop-start) 
+    list("trajets3"= trajets3,
+         "test3" = test3,
+         "pct_trajet_remplaces_region_couverte" = pct_trajet_remplaces_region_couverte,
+         "pct_trajet_remplaces_region_quebec_levis" = pct_trajet_remplaces_region_quebec_levis, 
+         "pct_quebec_levis_par_km" = pct_quebec_levis_par_km,
+         "tram_length" = signif(as.numeric(st_length(tram)),3)/1000)
+    
   })
   
 
   output$mymap <- renderLeaflet({
-    mypalette_pct <- leaflet::colorNumeric(palette = "plasma", domain = c(mytest3() %>% pull(pct_tramway)))
+    mypalette_pct <- leaflet::colorNumeric(palette = "plasma", domain = c(my_results()$"test3" %>% pull(pct_tramway)))
     
     prov_quebec %>% filter (ID <= 49) %>% 
-      left_join( mytest3()) %>% 
+      left_join( my_results()$"test3") %>% 
       leaflet() %>%
       addProviderTiles(providers$Esri.WorldTopoMap) %>%
       addPolygons( color= ~ mypalette_pct(pct_tramway),
@@ -109,5 +119,36 @@ shinyServer(function(input, output) {
                 title = "Pourcentage des voyages  <br>débutant ou se terminant dans ce secteur <br> remplaçables par le tramway <br> (moins de 1000 mètres de marche)")
   })
   
-  output$mytable <- renderTable({ mytest3() %>% arrange(-pct_tramway)})
+  output$mytable <- renderTable({ my_results()$"test3" %>% arrange(-pct_tramway)})
+  
+  output$myplot <- renderPlot({
+    dest.xy <- my_results()$"trajets3" %>% 
+      filter(ID_quartier_origine<=49, ID_quartier_destination <= 49) %>%
+      mutate(tramway = as.logical(tramway_accessible)) %>%
+      rename( oX= origine_x,
+              oY= origine_y,
+              dX = destination_x,
+              dY = destination_y)
+    
+    xquiet<- scale_x_continuous("", breaks=NULL)
+    yquiet<-scale_y_continuous("", breaks=NULL)
+    quiet<-list(xquiet, yquiet)
+    
+    ggplot(dest.xy  , aes(oX, oY))+
+      #The next line tells ggplot that we wish to plot line segments. The "alpha=" is line transparency and used below 
+      geom_segment(aes(x=oX, y=oY,xend=dX, yend=dY, col = tramway),  alpha=0.03)+
+      #Here is the magic bit that sets line transparency - essential to make the plot readable
+      scale_alpha_continuous(range = c(0.03, 0.3))+
+      #Set black background, ditch axes and fix aspect ratio
+      theme(panel.background = element_rect(fill='black',colour='black'))+quiet+coord_equal()+
+      scale_color_manual(values = c("white", "red")) + 
+      ggtitle(paste0(signif(100*my_results()$"pct_trajet_remplaces_region_quebec_levis",3), 
+                     " % de l'ensemble des trajets à origine ou destination de Québec et Lévis peuvent utiliser le tramway.")) +
+      labs(subtitle = paste0(
+        "Performance: ", signif(my_results()$"pct_quebec_levis_par_km"*100,3),
+        " % par kilomètre de tramway"),
+        caption = paste0("Longueur: ",my_results()$"tram_length", " km."))
+    
+    
+  })
 })
